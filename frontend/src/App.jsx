@@ -127,6 +127,110 @@ function VoiceOrb({ active, thinking, listening, onClick }) {
   )
 }
 
+function renderInline(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[([^\]]+)\]\(([^)]+)\))/g)
+  const nodes = []
+  let i = 0
+  while (i < parts.length) {
+    const part = parts[i]
+    if (!part) { i++; continue }
+    if (part.startsWith('**') && part.endsWith('**')) {
+      nodes.push(<strong key={i} className="text-cyan-300 font-semibold">{part.slice(2, -2)}</strong>)
+    } else if (part.startsWith('`') && part.endsWith('`')) {
+      nodes.push(
+        <code key={i} className="px-1.5 py-0.5 rounded text-xs font-mono"
+          style={{ background: 'rgba(34,211,238,0.12)', color: '#67e8f9' }}>
+          {part.slice(1, -1)}
+        </code>
+      )
+    } else if (part.startsWith('[')) {
+      const m = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+      if (m) nodes.push(<a key={i} href={m[2]} target="_blank" rel="noreferrer"
+        className="text-cyan-400 underline underline-offset-2 hover:text-cyan-300">{m[1]}</a>)
+      else nodes.push(part)
+    } else {
+      nodes.push(part)
+    }
+    i++
+  }
+  return nodes
+}
+
+function MarkdownContent({ text, isUser }) {
+  if (isUser) return <span>{text}</span>
+  const lines = text.split('\n')
+  const elements = []
+  let listItems = []
+  let listType = null
+
+  const flushList = (key) => {
+    if (!listItems.length) return
+    if (listType === 'ul') {
+      elements.push(
+        <ul key={`ul-${key}`} className="mt-1.5 mb-1 space-y-1 pl-1">
+          {listItems.map((item, j) => (
+            <li key={j} className="flex gap-2 items-start">
+              <span className="mt-1.5 w-1 h-1 rounded-full shrink-0" style={{ background: 'rgba(34,211,238,0.6)' }} />
+              <span>{renderInline(item)}</span>
+            </li>
+          ))}
+        </ul>
+      )
+    } else {
+      elements.push(
+        <ol key={`ol-${key}`} className="mt-1.5 mb-1 space-y-1 pl-1 list-none">
+          {listItems.map((item, j) => (
+            <li key={j} className="flex gap-2 items-start">
+              <span className="shrink-0 text-cyan-400 font-mono text-xs mt-0.5">{j + 1}.</span>
+              <span>{renderInline(item)}</span>
+            </li>
+          ))}
+        </ol>
+      )
+    }
+    listItems = []
+    listType = null
+  }
+
+  lines.forEach((line, idx) => {
+    const ulMatch = line.match(/^[-•*]\s+(.+)/)
+    const olMatch = line.match(/^\d+\.\s+(.+)/)
+    const h3Match = line.match(/^###\s+(.+)/)
+    const h2Match = line.match(/^##\s+(.+)/)
+
+    if (ulMatch) {
+      if (listType === 'ol') flushList(idx)
+      listType = 'ul'
+      listItems.push(ulMatch[1])
+    } else if (olMatch) {
+      if (listType === 'ul') flushList(idx)
+      listType = 'ol'
+      listItems.push(olMatch[1])
+    } else {
+      flushList(idx)
+      if (!line.trim()) {
+        if (elements.length) elements.push(<div key={`sp-${idx}`} className="h-1" />)
+      } else if (h2Match) {
+        elements.push(
+          <p key={idx} className="text-cyan-300 font-semibold text-sm mt-2 mb-0.5 tracking-wide">
+            {renderInline(h2Match[1])}
+          </p>
+        )
+      } else if (h3Match) {
+        elements.push(
+          <p key={idx} className="text-cyan-400/80 font-medium text-xs mt-2 mb-0.5 uppercase tracking-widest">
+            {renderInline(h3Match[1])}
+          </p>
+        )
+      } else {
+        elements.push(<p key={idx} className="leading-relaxed">{renderInline(line)}</p>)
+      }
+    }
+  })
+  flushList('end')
+  return <div className="flex flex-col gap-0.5 text-sm">{elements}</div>
+}
+
 function MessageRow({ msg }) {
   const isUser = msg.role === 'user'
   const isConfirm = msg.status === 'needs_confirmation'
@@ -146,7 +250,7 @@ function MessageRow({ msg }) {
         {isUser ? 'U' : 'J'}
       </div>
       <div
-        className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap
+        className={`max-w-[80%] px-4 py-2.5 rounded-2xl
           ${isUser ? 'rounded-tr-sm' : 'rounded-tl-sm'}
           ${isConfirm
             ? 'border border-amber-400/40 text-amber-200'
@@ -163,7 +267,7 @@ function MessageRow({ msg }) {
           border: isConfirm ? undefined : `1px solid ${isUser ? 'rgba(139,92,246,0.3)' : 'rgba(34,211,238,0.12)'}`,
         }}
       >
-        {msg.content}
+        <MarkdownContent text={msg.content} isUser={isUser} />
       </div>
     </div>
   )
