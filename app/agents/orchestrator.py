@@ -4,6 +4,11 @@ from app.agents.email_agent import handle_list_emails, handle_send_email
 from app.agents.calendar_agent import handle_calendar
 from app.memory.db import get_recent_interactions, save_interaction
 from app.tools.system import open_url, search_google, open_youtube, open_app, control_music
+from app.tools.weather import get_weather
+from app.tools.tasks import (
+    tool_add_todo, tool_list_todos, tool_complete_todo,
+    tool_set_reminder, tool_list_reminders, tool_complete_reminder,
+)
 
 client = OpenAI()
 
@@ -103,6 +108,96 @@ TOOLS = [
                     "name": {"type": "string", "description": "The application name to open."},
                 },
                 "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_todo",
+            "description": "Add a new task or to-do item to the user's persistent to-do list.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "The task description."},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_todos",
+            "description": "Show the user's current pending to-do list.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_todo",
+            "description": "Mark a to-do item as done by its ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todo_id": {"type": "integer", "description": "The numeric ID of the to-do item."},
+                },
+                "required": ["todo_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_reminder",
+            "description": "Set a reminder for the user with an optional date/time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "What to remind the user about."},
+                    "remind_at": {"type": "string", "description": "ISO datetime string for when to remind (e.g. '2025-01-15T09:00'). Optional."},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_reminders",
+            "description": "Show the user's active reminders.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_reminder",
+            "description": "Dismiss or mark a reminder as done by its ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reminder_id": {"type": "integer", "description": "The numeric ID of the reminder."},
+                },
+                "required": ["reminder_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather for any city or location in the world.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City name, optionally with country (e.g. 'Delhi, India', 'London', 'New York, US').",
+                    },
+                },
+                "required": ["location"],
             },
         },
     },
@@ -239,6 +334,20 @@ async def handle_user_input(text: str, session_id: str = "default") -> dict:
             result = open_youtube(fn_args.get("query"))
         elif fn_name == "open_app":
             result = open_app(fn_args["name"])
+        elif fn_name == "add_todo":
+            result = tool_add_todo(fn_args["title"], session_id=session_id)
+        elif fn_name == "list_todos":
+            result = tool_list_todos(session_id=session_id)
+        elif fn_name == "complete_todo":
+            result = tool_complete_todo(fn_args["todo_id"], session_id=session_id)
+        elif fn_name == "set_reminder":
+            result = tool_set_reminder(fn_args["title"], fn_args.get("remind_at"), session_id=session_id)
+        elif fn_name == "list_reminders":
+            result = tool_list_reminders(session_id=session_id)
+        elif fn_name == "complete_reminder":
+            result = tool_complete_reminder(fn_args["reminder_id"], session_id=session_id)
+        elif fn_name == "get_weather":
+            result = get_weather(fn_args["location"])
         elif fn_name == "control_music":
             result = control_music(fn_args["action"], fn_args.get("service", "spotify"))
         else:

@@ -2,7 +2,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.agents.orchestrator import handle_user_input, execute_confirmed_action
-from app.memory.db import init_db
+from app.memory.db import (
+    init_db,
+    get_todos, complete_todo, delete_todo,
+    get_reminders, complete_reminder,
+)
 
 _pending_actions: dict[str, dict] = {}
 
@@ -61,3 +65,39 @@ async def cancel_action(payload: dict):
     session_id = payload.get("session_id", "default")
     _pending_actions.pop(session_id, None)
     return {"status": "cancelled", "message": "Action cancelled."}
+
+
+@app.get("/todos")
+def list_todos(session_id: str = "default"):
+    return {"todos": get_todos(session_id=session_id, include_done=False)}
+
+
+@app.patch("/todos/{todo_id}/complete")
+def mark_todo_done(todo_id: int, payload: dict = {}):
+    session_id = payload.get("session_id", "default")
+    complete_todo(todo_id, session_id=session_id)
+    return {"status": "ok"}
+
+
+@app.delete("/todos/{todo_id}")
+def remove_todo(todo_id: int, session_id: str = "default"):
+    delete_todo(todo_id, session_id=session_id)
+    return {"status": "ok"}
+
+
+@app.get("/reminders")
+def list_reminders(session_id: str = "default"):
+    items = get_reminders(session_id=session_id, include_done=False)
+    for r in items:
+        if r.get("remind_at"):
+            r["remind_at"] = r["remind_at"].isoformat()
+        if r.get("created_at"):
+            r["created_at"] = r["created_at"].isoformat()
+    return {"reminders": items}
+
+
+@app.patch("/reminders/{reminder_id}/complete")
+def mark_reminder_done(reminder_id: int, payload: dict = {}):
+    session_id = payload.get("session_id", "default")
+    complete_reminder(reminder_id, session_id=session_id)
+    return {"status": "ok"}

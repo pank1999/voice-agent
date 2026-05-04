@@ -1,9 +1,152 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, CheckCircle, XCircle, Mic, Square } from 'lucide-react'
+import { Send, CheckCircle, XCircle, Mic, Square, ListTodo, Bell, X, Trash2 } from 'lucide-react'
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 
 const SESSION_ID = crypto.randomUUID()
+
+function TasksPanel({ sessionId, onClose, refreshKey }) {
+  const [tab, setTab] = useState('todos')
+  const [todos, setTodos] = useState([])
+  const [reminders, setReminders] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [t, r] = await Promise.all([
+        fetch(`http://localhost:8000/todos?session_id=${sessionId}`).then(r => r.json()),
+        fetch(`http://localhost:8000/reminders?session_id=${sessionId}`).then(r => r.json()),
+      ])
+      setTodos(t.todos || [])
+      setReminders(r.reminders || [])
+    } catch {}
+    setLoading(false)
+  }, [sessionId])
+
+  useEffect(() => { fetchAll() }, [fetchAll, refreshKey])
+
+  const completeTodo = async (id) => {
+    await fetch(`http://localhost:8000/todos/${id}/complete`, { method: 'PATCH' })
+    fetchAll()
+  }
+  const deleteTodo = async (id) => {
+    await fetch(`http://localhost:8000/todos/${id}?session_id=${sessionId}`, { method: 'DELETE' })
+    fetchAll()
+  }
+  const completeReminder = async (id) => {
+    await fetch(`http://localhost:8000/reminders/${id}/complete`, { method: 'PATCH' })
+    fetchAll()
+  }
+
+  const fmtTime = (iso) => {
+    if (!iso) return null
+    try {
+      return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+    } catch { return iso }
+  }
+
+  return (
+    <div
+      className="fixed right-0 top-0 h-screen w-80 z-50 flex flex-col"
+      style={{
+        background: 'linear-gradient(180deg,#040d1e 0%,#020917 100%)',
+        borderLeft: '1px solid rgba(34,211,238,0.15)',
+        backdropFilter: 'blur(20px)',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-cyan-900/20">
+        <p className="text-cyan-300 text-sm font-medium tracking-wide">Tasks & Reminders</p>
+        <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors cursor-pointer">
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-cyan-900/20">
+        {[['todos', 'To-Do', <ListTodo size={13} />], ['reminders', 'Reminders', <Bell size={13} />]].map(([id, label, icon]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-3 text-xs tracking-widest uppercase transition-all cursor-pointer"
+            style={{
+              color: tab === id ? '#22d3ee' : 'rgba(100,116,139,0.8)',
+              borderBottom: tab === id ? '2px solid #22d3ee' : '2px solid transparent',
+            }}
+          >
+            {icon}{label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+        {loading && <p className="text-slate-600 text-xs text-center mt-4">Loading…</p>}
+
+        {tab === 'todos' && !loading && (
+          todos.length === 0
+            ? <div className="text-center mt-8">
+                <ListTodo size={28} className="text-cyan-900/50 mx-auto mb-2" />
+                <p className="text-slate-600 text-xs">No pending tasks</p>
+                <p className="text-slate-700 text-xs mt-1">Say "Add todo: buy groceries"</p>
+              </div>
+            : todos.map(t => (
+                <div
+                  key={t.id}
+                  className="flex items-start gap-3 px-3 py-2.5 rounded-xl group"
+                  style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}
+                >
+                  <button
+                    onClick={() => completeTodo(t.id)}
+                    className="mt-0.5 w-4 h-4 rounded-full border border-cyan-700/50 shrink-0 hover:border-cyan-400 hover:bg-cyan-400/20 transition-all cursor-pointer"
+                  />
+                  <span className="flex-1 text-cyan-100/80 text-xs leading-relaxed">{t.title}</span>
+                  <button
+                    onClick={() => deleteTodo(t.id)}
+                    className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all cursor-pointer shrink-0"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))
+        )}
+
+        {tab === 'reminders' && !loading && (
+          reminders.length === 0
+            ? <div className="text-center mt-8">
+                <Bell size={28} className="text-cyan-900/50 mx-auto mb-2" />
+                <p className="text-slate-600 text-xs">No active reminders</p>
+                <p className="text-slate-700 text-xs mt-1">Say "Remind me to call John at 9am"</p>
+              </div>
+            : reminders.map(r => (
+                <div
+                  key={r.id}
+                  className="flex items-start gap-3 px-3 py-2.5 rounded-xl group"
+                  style={{ background: 'rgba(167,139,250,0.05)', border: '1px solid rgba(167,139,250,0.12)' }}
+                >
+                  <button
+                    onClick={() => completeReminder(r.id)}
+                    className="mt-0.5 w-4 h-4 rounded-full border border-violet-700/50 shrink-0 hover:border-violet-400 hover:bg-violet-400/20 transition-all cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-violet-100/80 text-xs leading-relaxed">{r.title}</p>
+                    {r.remind_at && (
+                      <p className="text-violet-400/50 text-xs mt-0.5">{fmtTime(r.remind_at)}</p>
+                    )}
+                  </div>
+                </div>
+              ))
+        )}
+      </div>
+
+      {/* Footer hint */}
+      <div className="px-4 py-3 border-t border-cyan-900/20">
+        <p className="text-slate-700 text-xs text-center">Use voice or chat to add tasks</p>
+      </div>
+    </div>
+  )
+}
 
 const SUGGESTIONS = [
   'Show my latest emails',
@@ -285,6 +428,8 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [pendingConfirm, setPendingConfirm] = useState(false)
   const [active, setActive] = useState(false)
+  const [showTasks, setShowTasks] = useState(false)
+  const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef(null)
   const transcriptRef = useRef('')
@@ -320,7 +465,10 @@ export default function App() {
       const data = await apiPost('/command', { text })
       if (data.status === 'needs_confirmation') {
         setPendingConfirm(true)
-        addMessage({ role: 'assistant', content: data.message, status: 'needs_confirmation' })
+        addMessage({ role: 'assistant', content: data.response || data.message, status: data.status })
+        if (['add_todo','list_todos','complete_todo','set_reminder','list_reminders','complete_reminder'].includes(data.intent)) {
+          setTasksRefreshKey(k => k + 1)
+        }
         speak(data.message)
       } else {
         addMessage({ role: 'assistant', content: data.response })
@@ -509,12 +657,27 @@ export default function App() {
               <h1 className="text-white font-light text-xl tracking-wide">Voice Agent</h1>
               <p className="text-slate-500 text-xs tracking-widest uppercase mt-0.5">AI Assistant Interface</p>
             </div>
-            <div className="flex items-center gap-2 text-xs text-cyan-400/50 tracking-widest uppercase">
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: '#22d3ee', boxShadow: '0 0 6px #22d3ee', animation: 'pulse 2s infinite' }}
-              />
-              Online
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowTasks(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer"
+                style={{
+                  background: showTasks ? 'rgba(34,211,238,0.12)' : 'rgba(34,211,238,0.04)',
+                  border: `1px solid ${showTasks ? 'rgba(34,211,238,0.4)' : 'rgba(34,211,238,0.15)'}`,
+                  color: showTasks ? '#22d3ee' : 'rgba(100,116,139,0.8)',
+                }}
+                title="Tasks & Reminders"
+              >
+                <ListTodo size={13} />
+                <span className="hidden sm:inline tracking-widest uppercase">Tasks</span>
+              </button>
+              <div className="flex items-center gap-2 text-xs text-cyan-400/50 tracking-widest uppercase">
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: '#22d3ee', boxShadow: '0 0 6px #22d3ee', animation: 'pulse 2s infinite' }}
+                />
+                Online
+              </div>
             </div>
           </div>
 
@@ -637,6 +800,13 @@ export default function App() {
           </form>
         </div>
       </div>
+      {showTasks && (
+        <TasksPanel
+          sessionId={SESSION_ID}
+          onClose={() => setShowTasks(false)}
+          refreshKey={tasksRefreshKey}
+        />
+      )}
     </>
   )
 }
