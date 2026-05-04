@@ -35,7 +35,7 @@ async def process_command(payload: dict):
     if not user_input:
         raise HTTPException(status_code=400, detail="Missing 'text' field")
 
-    result = await handle_user_input(user_input)
+    result = await handle_user_input(user_input, session_id=session_id)
 
     if result.get("status") == "needs_confirmation":
         _pending_actions[session_id] = {
@@ -53,7 +53,7 @@ async def confirm_action(payload: dict):
     pending = _pending_actions.pop(session_id, None)
     if not pending:
         raise HTTPException(status_code=404, detail="No pending action for this session")
-    return await execute_confirmed_action(pending["action"], pending["args"])
+    return await execute_confirmed_action(pending["action"], pending["args"], session_id=session_id)
 
 
 @app.post("/cancel")

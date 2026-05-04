@@ -3,6 +3,7 @@ from openai import OpenAI
 from app.agents.email_agent import handle_list_emails, handle_send_email
 from app.agents.calendar_agent import handle_calendar
 from app.memory.db import get_recent_interactions, save_interaction
+from app.tools.system import open_url, search_google, open_youtube, open_app, control_music
 
 client = OpenAI()
 
@@ -49,6 +50,85 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_url",
+            "description": "Open any URL or website in the default browser.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The URL to open."},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Search Google for a query and open results in the browser.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_youtube",
+            "description": "Open YouTube, optionally searching for a video or topic.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Optional search query on YouTube."},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_app",
+            "description": "Launch a desktop application by name (e.g. Spotify, VS Code, Slack, Chrome).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The application name to open."},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_music",
+            "description": "Control music playback — play, pause, next track, previous track, or toggle on Spotify or Apple Music.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play", "pause", "next", "previous", "toggle"],
+                        "description": "The playback action.",
+                    },
+                    "service": {
+                        "type": "string",
+                        "enum": ["spotify", "apple_music"],
+                        "description": "Music service to control. Defaults to spotify.",
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 REQUIRES_CONFIRMATION = {"send_email"}
@@ -93,11 +173,22 @@ FORMATTING GUIDELINES:
 - Highlight metrics in bold (e.g., **75% reduction**, **30% increase**)
 - Keep responses concise but informative (2-4 sentences for simple questions)
 - Be conversational, enthusiastic, and professional
+
+FOLLOW-UP & CLARIFICATION RULES:
+- If a request is ambiguous or missing key details, ask a short clarifying question BEFORE calling any tool.
+  Examples:
+  - "Play music" → ask "What would you like to listen to, and on Spotify or Apple Music?"
+  - "Send an email" → ask "Who should I send it to, and what's the message?"
+  - "Open YouTube" → ask "Would you like me to search for something specific on YouTube?"
+  - "Search for something" → ask "What would you like me to search for?"
+- Keep follow-up questions short, friendly, and to the point (one question at a time).
+- Once you have enough info, proceed with the tool call without asking again.
+- Remember context from earlier in the conversation — don't ask for info the user already provided.
 """
 
 
-def _build_messages(text: str) -> list[dict]:
-    history = get_recent_interactions(limit=6)
+def _build_messages(text: str, session_id: str = "default") -> list[dict]:
+    history = get_recent_interactions(limit=10, session_id=session_id)
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     for item in history:
         messages.append({"role": "user", "content": item["user_input"]})
@@ -106,8 +197,8 @@ def _build_messages(text: str) -> list[dict]:
     return messages
 
 
-async def handle_user_input(text: str) -> dict:
-    messages = _build_messages(text)
+async def handle_user_input(text: str, session_id: str = "default") -> dict:
+    messages = _build_messages(text, session_id=session_id)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -124,6 +215,7 @@ async def handle_user_input(text: str) -> dict:
         fn_args = json.loads(tool_call.function.arguments)
 
         if fn_name in REQUIRES_CONFIRMATION:
+            save_interaction(text, f"[awaiting confirmation] {fn_name}", intent=fn_name, session_id=session_id)
             return {
                 "status": "needs_confirmation",
                 "action": fn_name,
@@ -139,24 +231,35 @@ async def handle_user_input(text: str) -> dict:
             result = await handle_list_emails(fn_args.get("max_results", 5))
         elif fn_name == "get_calendar":
             result = await handle_calendar(text)
+        elif fn_name == "open_url":
+            result = open_url(fn_args["url"])
+        elif fn_name == "search_web":
+            result = search_google(fn_args["query"])
+        elif fn_name == "open_youtube":
+            result = open_youtube(fn_args.get("query"))
+        elif fn_name == "open_app":
+            result = open_app(fn_args["name"])
+        elif fn_name == "control_music":
+            result = control_music(fn_args["action"], fn_args.get("service", "spotify"))
         else:
             result = "Unknown tool called."
 
-        save_interaction(text, result, intent=fn_name)
+        save_interaction(text, result, intent=fn_name, session_id=session_id)
         return {"status": "ok", "response": result}
 
-    text_response = choice.message.content or "I can help with email and calendar."
-    save_interaction(text, text_response, intent="general")
+    text_response = choice.message.content or "I'm here to help!"
+    save_interaction(text, text_response, intent="general", session_id=session_id)
     return {"status": "ok", "response": text_response}
 
 
-async def execute_confirmed_action(action: str, args: dict) -> dict:
+async def execute_confirmed_action(action: str, args: dict, session_id: str = "default") -> dict:
     if action == "send_email":
         result = await handle_send_email(args["to"], args["subject"], args["body"])
         save_interaction(
             f"[confirmed] send_email to {args['to']}",
             result,
             intent="send_email",
+            session_id=session_id,
         )
         return {"status": "ok", "response": result}
     return {"status": "error", "response": "Unknown action."}
