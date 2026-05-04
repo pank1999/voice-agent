@@ -2,3 +2,7 @@ venv
 __pycache__
 *.pyc
 .env
+.gitnexus
+.claude
+credentials.json
+token.json

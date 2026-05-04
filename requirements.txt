@@ -1,6 +1,13 @@
 fastapi
 uvicorn
+python-multipart
 openai
 python-dotenv
 requests
 pydantic
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+psycopg2-binary
+asyncpg
