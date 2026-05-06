@@ -3,7 +3,7 @@ from openai import OpenAI
 from app.agents.email_agent import handle_list_emails, handle_send_email
 from app.agents.calendar_agent import handle_calendar
 from app.memory.db import get_recent_interactions, save_interaction
-from app.tools.system import open_url, search_google, open_youtube, open_app, control_music
+from app.tools.system import open_url, search_google, open_youtube, open_app, control_music, setup_workspace
 from app.tools.weather import get_weather
 from app.tools.tasks import (
     tool_add_todo, tool_list_todos, tool_complete_todo,
@@ -108,6 +108,24 @@ TOOLS = [
                     "name": {"type": "string", "description": "The application name to open."},
                 },
                 "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "setup_workspace",
+            "description": "Set up the developer workspace by launching apps and opening browser tabs. Presets: 'default' (Windsurf, Discord, GitHub, ClickUp, Gmail), 'work' (adds Slack and Calendar), 'focus' (Windsurf + GitHub only), 'social' (Discord, Spotify, Twitter, YouTube). Use when the user says things like 'set up my workspace', 'start my day', 'open my apps'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preset": {
+                        "type": "string",
+                        "enum": ["default", "work", "focus", "social"],
+                        "description": "Which workspace preset to use. Defaults to 'default'.",
+                    },
+                },
+                "required": [],
             },
         },
     },
@@ -334,6 +352,8 @@ async def handle_user_input(text: str, session_id: str = "default") -> dict:
             result = open_youtube(fn_args.get("query"))
         elif fn_name == "open_app":
             result = open_app(fn_args["name"])
+        elif fn_name == "setup_workspace":
+            result = setup_workspace(fn_args.get("preset", "default"))
         elif fn_name == "add_todo":
             result = tool_add_todo(fn_args["title"], session_id=session_id)
         elif fn_name == "list_todos":

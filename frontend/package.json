@@ -1,13 +1,19 @@
 {
-  "name": "frontend",
+  "name": "jarvis",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "main": "../electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "NODE_ENV=development electron ../electron/main.js",
+    "electron:start": "concurrently -k \"vite\" \"NODE_ENV=development electron ../electron/main.js\"",
+    "electron:build": "vite build && electron-builder --mac",
+    "electron:build:win": "vite build && electron-builder --win",
+    "electron:build:linux": "vite build && electron-builder --linux"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
@@ -21,10 +27,56 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.1.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
     "vite": "^8.0.10"
+  },
+  "build": {
+    "appId": "dev.pankajpandey.jarvis",
+    "productName": "JARVIS",
+    "directories": {
+      "buildResources": "public",
+      "output": "../dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "../electron/**/*",
+      "../app/**/*",
+      "../requirements.txt",
+      "../.env"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "app",
+        "filter": [
+          "app/**/*",
+          "requirements.txt",
+          ".env"
+        ]
+      }
+    ]
   }
 }

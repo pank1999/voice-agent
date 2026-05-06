@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, CheckCircle, XCircle, Mic, Square, ListTodo, Bell, X, Trash2 } from 'lucide-react'
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-
 const SESSION_ID = crypto.randomUUID()
+
+const TASKS_API_BASE = window.electron?.isElectron ? 'http://127.0.0.1:8000' : 'http://localhost:8000'
 
 function TasksPanel({ sessionId, onClose, refreshKey }) {
   const [tab, setTab] = useState('todos')
@@ -15,27 +15,31 @@ function TasksPanel({ sessionId, onClose, refreshKey }) {
     setLoading(true)
     try {
       const [t, r] = await Promise.all([
-        fetch(`http://localhost:8000/todos?session_id=${sessionId}`).then(r => r.json()),
-        fetch(`http://localhost:8000/reminders?session_id=${sessionId}`).then(r => r.json()),
+        fetch(`${TASKS_API_BASE}/todos?session_id=${sessionId}`).then(r => r.json()),
+        fetch(`${TASKS_API_BASE}/reminders?session_id=${sessionId}`).then(r => r.json()),
       ])
       setTodos(t.todos || [])
       setReminders(r.reminders || [])
-    } catch {}
+    } catch { /* network error — silently ignore */ }
     setLoading(false)
   }, [sessionId])
 
-  useEffect(() => { fetchAll() }, [fetchAll, refreshKey])
+  useEffect(() => {
+    let cancelled = false
+    fetchAll().then(() => { if (cancelled) return }).catch(() => {})
+    return () => { cancelled = true }
+  }, [fetchAll, refreshKey])
 
   const completeTodo = async (id) => {
-    await fetch(`http://localhost:8000/todos/${id}/complete`, { method: 'PATCH' })
+    await fetch(`${TASKS_API_BASE}/todos/${id}/complete`, { method: 'PATCH' })
     fetchAll()
   }
   const deleteTodo = async (id) => {
-    await fetch(`http://localhost:8000/todos/${id}?session_id=${sessionId}`, { method: 'DELETE' })
+    await fetch(`${TASKS_API_BASE}/todos/${id}?session_id=${sessionId}`, { method: 'DELETE' })
     fetchAll()
   }
   const completeReminder = async (id) => {
-    await fetch(`http://localhost:8000/reminders/${id}/complete`, { method: 'PATCH' })
+    await fetch(`${TASKS_API_BASE}/reminders/${id}/complete`, { method: 'PATCH' })
     fetchAll()
   }
 
@@ -154,8 +158,10 @@ const SUGGESTIONS = [
   'Send an email to team@example.com',
 ]
 
+const API_BASE = window.electron?.isElectron ? 'http://127.0.0.1:8000' : ''
+
 async function apiPost(path, body) {
-  const res = await fetch(path, {
+  const res = await fetch(API_BASE + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: SESSION_ID, ...body }),
@@ -431,8 +437,8 @@ export default function App() {
   const [showTasks, setShowTasks] = useState(false)
   const [tasksRefreshKey, setTasksRefreshKey] = useState(0)
   const [listening, setListening] = useState(false)
-  const recognitionRef = useRef(null)
-  const transcriptRef = useRef('')
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -483,49 +489,56 @@ export default function App() {
     }
   }, [loading, addMessage, speak])
 
-  const toggleListening = useCallback(() => {
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Try Chrome or Edge.')
-      return
-    }
+  const toggleListening = useCallback(async () => {
     if (listening) {
-      recognitionRef.current?.stop()
+      mediaRecorderRef.current?.stop()
       return
     }
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
-    recognition.interimResults = true
-    recognition.continuous = false
-    recognitionRef.current = recognition
+    let stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      addMessage({ role: 'assistant', content: 'Microphone access denied. Please allow mic permission.' })
+      return
+    }
+    audioChunksRef.current = []
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg'
+    const recorder = new MediaRecorder(stream, { mimeType })
+    mediaRecorderRef.current = recorder
 
-    recognition.onstart = () => setListening(true)
-
-    recognition.onresult = (e) => {
-      const transcript = Array.from(e.results)
-        .map(r => r[0].transcript)
-        .join('')
-      transcriptRef.current = transcript
-      setInput(transcript)
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunksRef.current.push(e.data)
     }
 
-    recognition.onend = () => {
+    recorder.onstart = () => setListening(true)
+
+    recorder.onstop = async () => {
       setListening(false)
-      const final = transcriptRef.current.trim()
-      transcriptRef.current = ''
-      if (final) {
-        setInput('')
-        sendCommand(final)
+      stream.getTracks().forEach(t => t.stop())
+      const blob = new Blob(audioChunksRef.current, { type: mimeType })
+      audioChunksRef.current = []
+      if (blob.size < 1000) return
+      setLoading(true)
+      setActive(true)
+      try {
+        const ext = mimeType.includes('webm') ? 'webm' : 'ogg'
+        const form = new FormData()
+        form.append('file', blob, `audio.${ext}`)
+        const base = window.electron?.isElectron ? 'http://127.0.0.1:8000' : ''
+        const res = await fetch(`${base}/transcribe`, { method: 'POST', body: form })
+        const { text } = await res.json()
+        if (text?.trim()) {
+          setInput('')
+          await sendCommand(text.trim())
+        }
+      } catch (e) {
+        addMessage({ role: 'assistant', content: `Transcription error: ${e.message}` })
+        setLoading(false)
+        setActive(false)
       }
     }
 
-    recognition.onerror = (e) => {
-      setListening(false)
-      if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        addMessage({ role: 'assistant', content: `Mic error: ${e.error}` })
-      }
-    }
-
-    recognition.start()
+    recorder.start()
   }, [listening, sendCommand, addMessage])
 
   const handleConfirm = async () => {
@@ -569,6 +582,8 @@ export default function App() {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.2); border-radius: 4px; }
+        .drag-region { -webkit-app-region: drag; }
+        .no-drag { -webkit-app-region: no-drag; }
       `}</style>
 
       <div className="h-screen overflow-hidden flex" style={{ background: 'linear-gradient(135deg,#020917 0%,#0a1628 50%,#080d1f 100%)' }}>
@@ -581,7 +596,8 @@ export default function App() {
 
         {/* Left panel — Orb + status */}
         <div className="hidden lg:flex w-96 shrink-0 flex-col items-center justify-center gap-8 relative border-r border-cyan-900/30 px-8 h-screen overflow-hidden">
-          {/* Top label */}
+          {/* Top label — draggable title bar area */}
+          <div className="drag-region absolute top-0 left-0 right-0 h-16" />
           <div className="absolute top-8 left-8 right-8">
             <p className="text-cyan-400/50 text-xs tracking-[0.3em] uppercase">J.A.R.V.I.S</p>
             <p className="text-slate-500 text-xs mt-1">Just A Rather Very Intelligent System</p>
@@ -648,16 +664,16 @@ export default function App() {
         {/* Right panel — Chat */}
         <div className="flex-1 flex flex-col h-screen overflow-hidden">
 
-          {/* Top bar */}
-          <div className="flex items-center justify-between px-8 py-5 border-b border-cyan-900/20">
-            <div className="flex items-center gap-3 lg:hidden">
+          {/* Top bar — draggable */}
+          <div className="drag-region flex items-center justify-between px-8 py-5 border-b border-cyan-900/20" style={{ paddingLeft: window.electron?.isElectron ? '5rem' : undefined }}>
+            <div className="no-drag flex items-center gap-3 lg:hidden">
               <VoiceOrb active={active} thinking={loading} listening={listening} onClick={toggleListening} />
             </div>
             <div>
               <h1 className="text-white font-light text-xl tracking-wide">Voice Agent</h1>
               <p className="text-slate-500 text-xs tracking-widest uppercase mt-0.5">AI Assistant Interface</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="no-drag flex items-center gap-3">
               <button
                 onClick={() => setShowTasks(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer"

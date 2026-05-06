@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from openai import OpenAI
 from app.agents.orchestrator import handle_user_input, execute_confirmed_action
 from app.memory.db import (
     init_db,
@@ -9,6 +10,7 @@ from app.memory.db import (
 )
 
 _pending_actions: dict[str, dict] = {}
+_openai = OpenAI()
 
 
 @asynccontextmanager
@@ -25,6 +27,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.post("/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    audio_bytes = await file.read()
+    import tempfile, os
+    suffix = "." + (file.filename.split(".")[-1] if file.filename and "." in file.filename else "webm")
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
+    try:
+        with open(tmp_path, "rb") as f:
+            result = _openai.audio.transcriptions.create(model="whisper-1", file=f)
+        return {"text": result.text}
+    finally:
+        os.unlink(tmp_path)
 
 
 @app.get("/")
