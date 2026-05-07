@@ -32,9 +32,6 @@ jobs:
         run: |
           pyinstaller backend.spec --clean
           ls -la dist/
-          # Copy backend binary to frontend dist for electron-builder
-          mkdir -p frontend/dist
-          cp dist/jarvis-backend frontend/dist/
 
       - name: Install Node dependencies
         working-directory: frontend
