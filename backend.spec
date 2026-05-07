@@ -1,12 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
+import os
 from pathlib import Path
 
 block_cipher = None
 
+# Get project root (where backend.spec is located)
+project_root = os.path.dirname(os.path.abspath(SPECPATH))
+
 a = Analysis(
     ['app/main.py'],
-    pathex=[str(Path(__file__).parent)],
+    pathex=[project_root],
     binaries=[],
     datas=[
         ('app', 'app'),
