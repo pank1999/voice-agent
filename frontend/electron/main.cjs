@@ -137,11 +137,33 @@ function startBackend() {
   }
 
   console.log(`[electron] starting backend: ${backend.cmd}`);
+  console.log(`[electron] backend cwd: ${backend.cwd}`);
+  console.log(`[electron] backend args: ${backend.args.join(" ")}`);
+
+  // Check if binary exists and log details
+  try {
+    const stats = require("fs").statSync(backend.cmd);
+    console.log(`[electron] backend binary size: ${stats.size} bytes`);
+    console.log(`[electron] backend binary mode: ${stats.mode.toString(8)}`);
+  } catch (e) {
+    console.error(`[electron] cannot stat backend: ${e.message}`);
+  }
+
+  updateSplashStatus("Starting backend...");
 
   backendProcess = spawn(backend.cmd, backend.args, {
     cwd: backend.cwd,
     env: { ...process.env, JARVIS_DESKTOP: "1" },
     stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  backendProcess.on("error", (err) => {
+    console.error(`[electron] backend spawn error: ${err.message}`);
+    updateSplashStatus("Failed to start backend", "error");
+    dialog.showErrorBox(
+      "Backend Error",
+      `Failed to start backend: ${err.message}\n\nPath: ${backend.cmd}`,
+    );
   });
 
   backendProcess.stdout.on("data", (d) =>
@@ -151,8 +173,8 @@ function startBackend() {
     process.stderr.write("[backend] " + d),
   );
 
-  backendProcess.on("exit", (code) => {
-    console.log(`[backend] exited with code ${code}`);
+  backendProcess.on("exit", (code, signal) => {
+    console.log(`[backend] exited with code ${code}, signal ${signal}`);
     backendProcess = null;
   });
 }
@@ -166,13 +188,25 @@ function stopBackend() {
 
 async function waitForBackend(timeoutMs = BACKEND_READY_TIMEOUT) {
   const start = Date.now();
+  let checks = 0;
   while (Date.now() - start < timeoutMs) {
     try {
       const res = await fetch(`http://127.0.0.1:${BACKEND_PORT}/`);
-      if (res.ok) return true;
-    } catch {}
+      if (res.ok) {
+        updateSplashStatus("Systems online", "ready");
+        return true;
+      }
+    } catch {
+      checks++;
+      if (checks % 4 === 0) {
+        // Update every ~2 seconds
+        const elapsed = Math.round((Date.now() - start) / 1000);
+        updateSplashStatus(`Waiting for backend... (${elapsed}s)`);
+      }
+    }
     await new Promise((r) => setTimeout(r, 500));
   }
+  updateSplashStatus("Backend timeout", "error");
   return false;
 }
 
@@ -190,8 +224,8 @@ function createSplashWindow() {
     center: true,
     show: false,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
+      nodeIntegration: true,
+      contextIsolation: false,
     },
   });
 
@@ -215,6 +249,12 @@ function closeSplashWindow() {
     // Fade out effect
     splashWindow.setOpacity(0);
     setTimeout(() => splashWindow.close(), 300);
+  }
+}
+
+function updateSplashStatus(message, type = "") {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send("backend-status", { message, type });
   }
 }
 

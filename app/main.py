@@ -21,9 +21,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# CORS: allow all for desktop app, localhost only for dev
+import os
+if os.getenv("JARVIS_DESKTOP"):
+    origins = ["*"]  # Desktop app - allow all
+else:
+    origins = ["http://localhost:5173"]  # Dev mode only
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
