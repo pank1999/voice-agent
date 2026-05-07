@@ -3,7 +3,7 @@ name: Build and Release JARVIS Desktop App
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   workflow_dispatch:
 
 jobs:
@@ -16,12 +16,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Python dependencies
         run: |
@@ -35,10 +35,7 @@ jobs:
 
       - name: Install Node dependencies
         working-directory: frontend
-        run: |
-          npm install
-          # Copy electron files from root
-          cp -r ../electron electron
+        run: npm install
 
       - name: Build Electron app
         working-directory: frontend
