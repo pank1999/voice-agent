@@ -1,7 +1,7 @@
 {
   "name": "jarvis",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -9,12 +9,13 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "version:sync": "node -e \"const {execSync}=require('child_process');const tag=execSync('git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo v1.0.0').toString().trim().replace(/^v/, '');console.log('Syncing version to',tag);execSync('npm version '+tag+' --no-git-tag-version',{stdio:'inherit'})\"",
     "electron:dev": "NODE_ENV=development electron electron/main.cjs",
     "electron:start": "concurrently -k \"vite\" \"NODE_ENV=development electron electron/main.cjs\"",
-    "electron:build": "vite build && electron-builder --mac",
-    "electron:build:win": "vite build && electron-builder --win",
-    "electron:build:linux": "vite build && electron-builder --linux",
-    "electron:build:ci": "vite build && electron-builder --mac --publish=never"
+    "electron:build": "npm run version:sync && vite build && electron-builder --mac",
+    "electron:build:win": "npm run version:sync && vite build && electron-builder --win",
+    "electron:build:linux": "npm run version:sync && vite build && electron-builder --linux",
+    "electron:build:ci": "npm run version:sync && vite build && electron-builder --mac --publish=never"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
