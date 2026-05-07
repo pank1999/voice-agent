@@ -13,7 +13,8 @@
     "electron:start": "concurrently -k \"vite\" \"NODE_ENV=development electron ../electron/main.js\"",
     "electron:build": "vite build && electron-builder --mac",
     "electron:build:win": "vite build && electron-builder --win",
-    "electron:build:linux": "vite build && electron-builder --linux"
+    "electron:build:linux": "vite build && electron-builder --linux",
+    "electron:build:ci": "vite build && electron-builder --mac --publish=never"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
