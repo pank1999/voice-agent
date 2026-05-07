@@ -4,5 +4,7 @@ __pycache__
 .env
 .gitnexus
 .claude
+.DS_Store
 credentials.json
 token.json
+dist-electron

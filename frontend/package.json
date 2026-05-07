@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "main": "../electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -30,6 +30,7 @@
     "concurrently": "^9.1.2",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
+    "electron-updater": "^6.2.1",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -45,16 +46,30 @@
     },
     "files": [
       "dist/**/*",
-      "../electron/**/*",
-      "../app/**/*",
-      "../requirements.txt",
-      "../.env"
+      "electron/**/*"
+    ],
+    "asarUnpack": [
+      "electron/**/*",
+      "jarvis-backend"
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "public/icon.png",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     },
     "win": {
@@ -69,14 +84,15 @@
     },
     "extraResources": [
       {
-        "from": "../",
-        "to": "app",
-        "filter": [
-          "app/**/*",
-          "requirements.txt",
-          ".env"
-        ]
+        "from": "../dist/jarvis-backend",
+        "to": "jarvis-backend"
       }
-    ]
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "Optimeleon",
+      "repo": "voice-agent",
+      "releaseType": "release"
+    }
   }
 }
