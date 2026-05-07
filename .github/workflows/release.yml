@@ -41,7 +41,7 @@ jobs:
         working-directory: frontend
         run: npm run electron:build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_WORKFLOW_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -56,4 +56,4 @@ jobs:
           files: dist-electron/*.dmg
           generate_release_notes: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_WORKFLOW_TOKEN }}
