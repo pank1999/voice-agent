@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, CheckCircle, XCircle, Mic, Square, ListTodo, Bell, X, Trash2 } from 'lucide-react'
 
-const SESSION_ID = crypto.randomUUID()
-
 const TASKS_API_BASE = window.electron?.isElectron ? 'http://127.0.0.1:8000' : 'http://localhost:8000'
 
 function TasksPanel({ sessionId, onClose, refreshKey }) {
@@ -159,19 +157,6 @@ const SUGGESTIONS = [
 ]
 
 const API_BASE = window.electron?.isElectron ? 'http://127.0.0.1:8000' : ''
-
-async function apiPost(path, body) {
-  const res = await fetch(API_BASE + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: SESSION_ID, ...body }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `HTTP ${res.status}`)
-  }
-  return res.json()
-}
 
 function VoiceOrb({ active, thinking, listening, onClick }) {
   return (
@@ -423,6 +408,7 @@ function MessageRow({ msg }) {
 }
 
 export default function App() {
+  const [sessionId, setSessionId] = useState(null)
   const [messages, setMessages] = useState([
     {
       id: 'welcome',
@@ -442,9 +428,38 @@ export default function App() {
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
+  // Load persistent session ID
+  useEffect(() => {
+    if (window.electron?.getSessionId) {
+      window.electron.getSessionId().then(id => {
+        setSessionId(id)
+        console.log('[app] loaded session ID:', id)
+      }).catch(() => {
+        // Fallback to random ID if electron API fails
+        setSessionId(crypto.randomUUID())
+      })
+    } else {
+      // Non-electron environment
+      setSessionId(crypto.randomUUID())
+    }
+  }, [])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  const apiPost = useCallback(async (path, body) => {
+    const res = await fetch(API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, ...body }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `HTTP ${res.status}`)
+    }
+    return res.json()
+  }, [sessionId])
 
   const addMessage = useCallback((msg) => {
     setMessages(prev => [...prev, { id: crypto.randomUUID(), ...msg }])
@@ -487,7 +502,7 @@ export default function App() {
       setActive(false)
       inputRef.current?.focus()
     }
-  }, [loading, addMessage, speak])
+  }, [loading, addMessage, speak, apiPost])
 
   const toggleListening = useCallback(async () => {
     if (listening) {
@@ -816,9 +831,9 @@ export default function App() {
           </form>
         </div>
       </div>
-      {showTasks && (
+      {showTasks && sessionId && (
         <TasksPanel
-          sessionId={SESSION_ID}
+          sessionId={sessionId}
           onClose={() => setShowTasks(false)}
           refreshKey={tasksRefreshKey}
         />

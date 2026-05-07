@@ -11,6 +11,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
+const crypto = require("crypto");
 
 // Configuration
 const CONFIG_DIR = path.join(require("os").homedir(), ".jarvis");
@@ -52,6 +53,19 @@ function saveConfig(config) {
 function needsOnboarding() {
   const config = loadConfig();
   return !config || !config.openaiApiKey;
+}
+
+function getSessionId() {
+  let config = loadConfig();
+  if (!config) {
+    config = {};
+  }
+  if (!config.sessionId) {
+    config.sessionId = crypto.randomUUID();
+    saveConfig(config);
+    console.log("[electron] generated new session ID:", config.sessionId);
+  }
+  return config.sessionId;
 }
 
 // ── Backend ─────────────────────────────────────────────────────────────────
@@ -368,6 +382,10 @@ ipcMain.on("save-config", (event, config) => {
   } else {
     event.sender.send("config-error", "Failed to save configuration");
   }
+});
+
+ipcMain.handle("get-session-id", () => {
+  return getSessionId();
 });
 
 // ── App Lifecycle ─────────────────────────────────────────────────────────────
